@@ -4,6 +4,8 @@ const https = require('https')
 const { ApolloServer } = require('apollo-server-express')
 const Promise = require('bluebird')
 const _ = require('lodash')
+const depthLimit = require('graphql-depth-limit')
+const { createComplexityLimitRule } = require('graphql-validation-complexity')
 
 /* global WIKI */
 
@@ -123,6 +125,15 @@ module.exports = {
     this.servers.graph = new ApolloServer({
       ...graphqlSchema,
       context: ({ req, res }) => ({ req, res }),
+      validationRules: [
+        depthLimit(5),
+        createComplexityLimitRule(1000, {
+          onCost: (cost) => {
+            WIKI.logger.info(`GraphQL Query Cost: ${cost}`)
+          },
+          createError: (max, actual) => new Error(`GraphQL query too complex: ${actual}. Max allowed: ${max}`)
+        })
+      ],
       subscriptions: {
         onConnect: (connectionParams, webSocket) => {
 

@@ -9,6 +9,9 @@ const KnexSessionStore = require('connect-session-knex')(session)
 const favicon = require('serve-favicon')
 const path = require('path')
 const _ = require('lodash')
+const rateLimit = require('express-rate-limit')
+const depthLimit = require('graphql-depth-limit')
+const { createComplexityLimitRule } = require('graphql-validation-complexity')
 
 /* global WIKI */
 
@@ -37,13 +40,28 @@ module.exports = async () => {
   WIKI.app = app
   app.use(compression())
 
+  // --------------------------------------------------
+  // Redirect IP → DNS (по требованию ISG / Security)
+  // --------------------------------------------------
+  app.use((req, res, next) => {
+    const ipHostnames = ['103.87.40.241', '103.87.40.241:3001']
+    const canonicalHost = 'obbahrain.icicibank.com'
+
+    if (ipHostnames.includes(req.hostname)) {
+      const targetUrl = `https://${canonicalHost}${req.originalUrl}`
+      return res.redirect(301, targetUrl)
+    }
+
+    next()
+  })
+
   // ----------------------------------------
   // Security
   // ----------------------------------------
 
   app.use(mw.security)
-  app.use(cors({ origin: false }))
-  app.options('*', cors({ origin: false }))
+  app.use(cors({origin: false}))
+  app.options('*', cors({origin: false}))
   if (WIKI.config.security.securityTrustProxy) {
     app.enable('trust proxy')
   }
@@ -90,8 +108,22 @@ module.exports = async () => {
   // ----------------------------------------
   // GraphQL Server
   // ----------------------------------------
+  // ========================================
+  // GRAPHQL RATE LIMITING (Анти-DDoS)
+  // ========================================
+  // ----------------------------------------
+// GraphQL Server + Rate Limiting
+// ----------------------------------------
 
-  app.use(bodyParser.json({ limit: WIKI.config.bodyParserLimit || '1mb' }))
+  const graphqlRateLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 минут
+    max: 100, // 100 запросов с одного IP
+    message: 'Слишком много запросов. Попробуйте позже.'
+  })
+
+  app.use('/graphql', graphqlRateLimiter)
+
+  app.use(bodyParser.json({limit: WIKI.config.bodyParserLimit || '1mb'}))
   await WIKI.servers.startGraphQL()
 
   // ----------------------------------------
@@ -107,7 +139,7 @@ module.exports = async () => {
   app.set('views', path.join(WIKI.SERVERPATH, 'views'))
   app.set('view engine', 'pug')
 
-  app.use(bodyParser.urlencoded({ extended: false, limit: '1mb' }))
+  app.use(bodyParser.urlencoded({extended: false, limit: '1mb'}))
 
   // ----------------------------------------
   // Localization
@@ -157,8 +189,8 @@ module.exports = async () => {
       footerOverride: WIKI.config.footerOverride,
       logoUrl: WIKI.config.logoUrl
     }
-    res.locals.langs = await WIKI.models.locales.getNavLocales({ cache: true })
-    res.locals.analyticsCode = await WIKI.models.analytics.getCode({ cache: true })
+    res.locals.langs = await WIKI.models.locales.getNavLocales({cache: true})
+    res.locals.analyticsCode = await WIKI.models.analytics.getCode({cache: true})
     next()
   })
 
