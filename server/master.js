@@ -11,7 +11,7 @@ const path = require('path')
 const _ = require('lodash')
 const rateLimit = require('express-rate-limit')
 const depthLimit = require('graphql-depth-limit')
-const { createComplexityLimitRule } = require('graphql-validation-complexity')
+const {createComplexityLimitRule} = require('graphql-validation-complexity')
 
 /* global WIKI */
 
@@ -115,13 +115,15 @@ module.exports = async () => {
 // GraphQL Server + Rate Limiting
 // ----------------------------------------
 
-  const graphqlRateLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 минут
-    max: 100, // 100 запросов с одного IP
-    message: 'Слишком много запросов. Попробуйте позже.'
+  const rateLimit = require('express-rate-limit')
+
+  const graphqlLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 минута
+    max: 10, // максимум 10 запросов
+    message: 'Too many GraphQL requests. Please try again later.'
   })
 
-  app.use('/graphql', graphqlRateLimiter)
+  app.use('/graphql', graphqlLimiter)
 
   app.use(bodyParser.json({limit: WIKI.config.bodyParserLimit || '1mb'}))
   await WIKI.servers.startGraphQL()
